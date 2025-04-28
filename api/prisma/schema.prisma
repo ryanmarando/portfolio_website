@@ -18,5 +18,9 @@ model User {
   email    String @unique
   username String @unique
   createdAt DateTime @default(now()) @map("created_at")
+  alertListStates String
+  alertListCounties String
+  alertListAlertTypes String
+  alertListNWSOffices String
 
 }
