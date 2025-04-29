@@ -2,6 +2,7 @@ import express from "express";
 import logging from "./middleware/logging.js";
 import userRouter from "./routes/user.js";
 import alertsRouter from "./routes/alerts.js";
+import wbgtRouter from "./routes/wbgt.js";
 
 const app = express();
 const port = 3000;
@@ -15,6 +16,7 @@ app.get("/", (req, res) => {
 
 app.use("/user", userRouter);
 app.use("/alerts", alertsRouter);
+app.use("/wbgt", wbgtRouter);
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`API listening on http://localhost:${port}`);
