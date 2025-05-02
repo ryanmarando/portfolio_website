@@ -52,7 +52,7 @@ class Alert {
 type UserData = {
   states: string;
   counties?: { [key: string]: string[] };
-  alertTypes?: string;
+  alertTypes?: string[];
   NWSoffices?: string;
 };
 
@@ -61,6 +61,7 @@ let alertList: Alert[] = [];
 export const getAlerts: RequestHandler = async (req, res) => {
   const { states, counties, alertTypes, NWSoffices } = req.body;
 
+  console.log(req.body);
   // Validate that required parameters are provided
   if (!states) {
     res.status(400).json("Please enter a state to find alerts.");
@@ -78,14 +79,9 @@ export const getAlerts: RequestHandler = async (req, res) => {
   // Get all active alerts based on the user data
   await getAllActiveAlerts(userData);
 
-  // Check if there are any active alerts
-  if (alertList.length === 0) {
-    res.status(200).json("No alerts all clear!");
-    return;
-  }
-
   // Return the filtered alerts as a response
   res.status(200).json(alertList);
+  //console.log("done");
   return;
 };
 
@@ -112,8 +108,13 @@ const getAllActiveAlerts = async (userData: UserData): Promise<void> => {
       const alertData = await response.json();
 
       // Call the function to append and filter alerts for this state
-      await appendAndFilterAllAlerts(userData, alertData, state);
+      await appendAndFilterAllAlerts(userData, alertData["features"], state);
+      //console.log(state, ":", alertList.length);
     }
+
+    const uniqueById = new Map();
+    alertList.forEach((alert) => uniqueById.set(alert.id, alert));
+    alertList = Array.from(uniqueById.values());
 
     return;
   } catch (error) {
@@ -127,41 +128,44 @@ const appendAndFilterAllAlerts = async (
   state: string
 ) => {
   if (alertData) {
-    const raw_alert_list = alertData["features"];
+    const raw_alert_list = alertData;
 
-    alertList = raw_alert_list.map((feature: any) => {
-      const props = feature.properties;
-      return new Alert({
-        id: props.id,
-        areaDesc: props.areaDesc,
-        event: props.event,
-        effective: props.effective,
-        ends: props.ends,
-        expires: props.expires,
-        headline: props.headline,
-        description: props.description,
-        priority: getEventPriority(props.event),
-        color: getEventColor(props.event),
-        senderName: props.senderName,
-        stringOutput: formatStringOutput(
-          props.event,
-          props.ends,
-          props.expires
-        ),
-      });
-    });
+    alertList = alertList.concat(
+      raw_alert_list.map((feature: any) => {
+        const props = feature.properties;
+        return new Alert({
+          id: props.id,
+          areaDesc: props.areaDesc,
+          event: props.event,
+          effective: props.effective,
+          ends: props.ends,
+          expires: props.expires,
+          headline: props.headline,
+          description: props.description,
+          priority: getEventPriority(props.event),
+          color: getEventColor(props.event),
+          senderName: props.senderName,
+          stringOutput: formatStringOutput(
+            props.event,
+            props.ends,
+            props.expires
+          ),
+        });
+      })
+    );
 
-    if (userData.counties) {
-      const filteredCountyAlerts = await filterAlertsByCounty(userData, state);
-      alertList = filteredCountyAlerts;
+    // Then filter only for counties in this state
+    if (userData.counties?.[state] && userData.counties?.[state].length > 0) {
+      alertList = await filterAlertsByCounty(userData, state);
     }
 
-    if (userData.alertTypes) {
+    if (userData.alertTypes && userData.alertTypes.length > 0) {
+      // Proceed with split operation or other logic for alertTypes
       const filteredAlertsByType = await filterAlertsByType(userData);
       alertList = filteredAlertsByType;
     }
 
-    if (userData.NWSoffices) {
+    if (userData.NWSoffices && userData.NWSoffices.length > 0) {
       const filteredAlertsByOffice = await filterAlertsByOffice(userData);
       alertList = filteredAlertsByOffice;
     }
@@ -180,26 +184,29 @@ const filterAlertsByCounty = async (
   userData: UserData,
   state: string
 ): Promise<Alert[]> => {
-  if (!userData.counties) {
-    return []; // No counties provided
+  if (!userData.counties || !userData.counties[state]) {
+    return []; // No counties provided for this state
   }
 
-  const normalizeCounty = (county: string) => county.trim().toLowerCase();
-  const userStateCounties = userData.counties[state];
+  const normalizeCounty = (county: string) =>
+    county
+      .trim()
+      .toLowerCase()
+      .replace(/,\s*\w{2}$/, ""); // Removes ", tn" or similar
 
+  const userStateCounties = userData.counties[state];
   const userCountiesNormalized = userStateCounties.map((county) =>
     normalizeCounty(county)
   );
 
-  console.log(
-    `Checking these counties for state ${state}:`,
-    userCountiesNormalized
-  );
+  //console.log(
+  //  `Checking these counties for state ${state}:`,
+  //  userCountiesNormalized
+  //);
 
   const filteredAlerts = alertList.filter((alert) => {
     const alertAreaCounties = alert.areaDesc.split(";").map((c) => c.trim());
 
-    // Normalize and filter counties
     const alertAreaCountiesNormalized = alertAreaCounties.map((county) =>
       normalizeCounty(county)
     );
@@ -208,9 +215,15 @@ const filterAlertsByCounty = async (
       userCountiesNormalized.includes(county)
     );
 
+    //console.log("Matched:", matchingCounties);
+
     if (matchingCounties.length > 0) {
-      // Only include the matching counties in the areaDesc
-      alert.areaDesc = matchingCounties.join("; ");
+      // Preserve the original full county names for display
+      const originalMatching = alertAreaCounties.filter((c) =>
+        userCountiesNormalized.includes(normalizeCounty(c))
+      );
+
+      alert.areaDesc = originalMatching.join("; ");
       return true;
     }
 
@@ -226,9 +239,9 @@ const filterAlertsByType = async (userData: UserData): Promise<Alert[]> => {
   }
 
   // Split the user's alertTypes and remove extra spaces
-  const userAlertTypes = userData.alertTypes.split(",").map((t) => t.trim());
+  const userAlertTypes = userData.alertTypes.map((t) => t.trim());
 
-  console.log("User alert types:", userAlertTypes);
+  //console.log("User alert types:", userAlertTypes);
 
   // Filter alerts: must match exactly any of the user-specified types
   const filteredAlerts = alertList.filter((alert) => {
@@ -292,4 +305,17 @@ const formatKitchenTime = (timestamp: string): string => {
     .slice(-2)}`;
 
   return `${timePart} ${datePart}`;
+};
+
+export const getCountiesByState: RequestHandler = async (req, res) => {
+  const state = req.query.state;
+  const countyList =
+    countiesInStateLibrary[state as keyof typeof countiesInStateLibrary] || [];
+
+  if (countyList) {
+    res.status(200).json(countyList);
+  } else {
+    res.status(400).json("Error fetching counties");
+  }
+  return;
 };

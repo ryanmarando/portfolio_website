@@ -31,6 +31,12 @@ export const getWBGT: RequestHandler = async (req, res): Promise<void> => {
     }
 
     const stationData = await response.json();
+
+    const city: string =
+      stationData["properties"]["relativeLocation"]["properties"]["city"];
+    const state: string =
+      stationData["properties"]["relativeLocation"]["properties"]["state"];
+
     const forecastGridUrl = stationData?.properties?.forecastGridData;
     if (!forecastGridUrl) {
       res.status(500).json({ error: "Missing forecastGridData URL" });
@@ -58,7 +64,11 @@ export const getWBGT: RequestHandler = async (req, res): Promise<void> => {
 
     const formattedWBGTForecast = convertCelsiusToFahrenheit(wbgtForecast);
 
-    res.status(200).json(formattedWBGTForecast);
+    const finalData = {
+      location: `${city}, ${state}`,
+      formattedWBGTForecast,
+    };
+    res.status(200).json(finalData);
     return;
   } catch (error) {
     console.error("Unhandled error:", error);

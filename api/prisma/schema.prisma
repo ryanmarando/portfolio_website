@@ -18,6 +18,7 @@ model User {
   email    String @unique
   username String @unique
   createdAt DateTime @default(now()) @map("created_at")
+  admin Boolean @default(false)
   alertListStates String?
   alertListCounties String?
   alertListAlertTypes String?

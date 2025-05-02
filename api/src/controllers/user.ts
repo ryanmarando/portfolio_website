@@ -31,6 +31,7 @@ export const createUser: RequestHandler = async (req, res) => {
       data: req.body,
     });
     res.status(201).json(user);
+    console.log("Successful user create", user.id);
     return;
   } catch (error) {
     console.log("Unsuccessful POST of User Id");
