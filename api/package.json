@@ -3,10 +3,11 @@
     "version": "1.0.0",
     "main": "index.js",
     "scripts": {
-        "build": "tsc",
-        "dev": "tsc && && npx prisma migrate deploy && node dist/seed.js && node dist/app.js",
+        "build": "tsc && npm install",
+        "dev": "tsc && node dist/app.js",
         "start": "node dist/app.js",
-        "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\""
+        "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\"",
+        "postinstall": "tsc && prisma migrate deploy && prisma db seed"
     },
     "keywords": [],
     "author": "",
