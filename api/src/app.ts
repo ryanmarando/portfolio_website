@@ -5,12 +5,17 @@ import youtubeURLsRouter from "./routes/youtubeurls.js";
 import alertsRouter from "./routes/alerts.js";
 import wbgtRouter from "./routes/wbgt.js";
 import modelTrender from "./routes/modelTrender.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
-const port = 10000;
+const port = parseInt(process.env.PORT as string, 10) || 10000;
 
 const corsOptions = {
-    origin: ["http://localhost:3000"],
+    origin: [
+        "http://localhost:3000",
+        "https://nws-api-active-alerts-test.vercel.app",
+    ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
@@ -30,5 +35,5 @@ app.use("/wbgt", wbgtRouter);
 app.use("/modelTrender", modelTrender);
 
 app.listen(port, "0.0.0.0", () => {
-    console.log(`API listening on http://localhost:${port}`);
+    console.log(`API listening on :${port}`);
 });
