@@ -5,11 +5,9 @@ import youtubeURLsRouter from "./routes/youtubeurls.js";
 import alertsRouter from "./routes/alerts.js";
 import wbgtRouter from "./routes/wbgt.js";
 import modelTrender from "./routes/modelTrender.js";
-import dotenv from "dotenv";
-dotenv.config();
 
 const app = express();
-const port = parseInt(process.env.PORT as string, 10) || 10000;
+const port = 10000;
 
 const corsOptions = {
     origin: [
