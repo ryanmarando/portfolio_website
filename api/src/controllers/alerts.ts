@@ -107,6 +107,11 @@ const getAllActiveAlerts = async (userData: UserData): Promise<void> => {
       // Get the alert data for this specific state
       const alertData = await response.json();
 
+      // Skip if no alerts for that state
+      if (alertData["features"].length === 0) {
+        continue;
+      }
+
       // Call the function to append and filter alerts for this state
       await appendAndFilterAllAlerts(userData, alertData["features"], state);
       //console.log(state, ":", alertList.length);
@@ -138,6 +143,7 @@ const appendAndFilterAllAlerts = async (
 
     for (let i = alertData.length - 1; i >= 0; i--) {
       const feature = alertData[i];
+
       const rawAreaDescs = feature.properties.areaDesc.split(";");
 
       const normalizedAreaDescs = rawAreaDescs.map((c: string) =>
@@ -160,8 +166,9 @@ const appendAndFilterAllAlerts = async (
       if (matchingCounties.length === 0) {
         alertData.splice(i, 1); // Remove alert if no counties match
       } else {
-        // Update areaDesc to only the matching counties
-        feature.properties.areaDesc = matchingCounties.join("; ");
+        // Deduplicate and update areaDesc
+        const uniqueMatchingCounties = Array.from(new Set(matchingCounties));
+        feature.properties.areaDesc = uniqueMatchingCounties.join("; ");
       }
     }
   }

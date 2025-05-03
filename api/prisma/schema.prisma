@@ -13,15 +13,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id       Int    @id @default(autoincrement())
-  email    String @unique
-  username String @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  admin Boolean @default(false)
-  alertListStates String?
-  alertListCounties Json?
-  alertListAlertTypes String[] @default([])
-  alertListNWSOffices String[] @default([])
+model YoutubeUrls {
+  id     Int      @id @default(autoincrement())
+  name   String   @unique
+  titles String[] @default([])
+  urls   String[] @default([])
+}
 
+model ModelTrend {
+  id             String   @id @default(cuid())
+  modelName      String   // e.g., "GFS"
+  runTime        DateTime // model run time (e.g., 2025-05-03T00:00Z)
+  forecastHour   Int      // e.g., 24, 48
+  validTime      DateTime // time the forecast is valid for
+  parameter      String   // e.g., "2m_temp", "precip"
+  value          Float    // parsed value for the parameter
+  createdAt      DateTime @default(now())
+
+  @@index([modelName, runTime, forecastHour, parameter])
 }
