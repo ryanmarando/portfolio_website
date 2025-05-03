@@ -20,8 +20,8 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   admin Boolean @default(false)
   alertListStates String?
-  alertListCounties String?
-  alertListAlertTypes String?
-  alertListNWSOffices String?
+  alertListCounties Json?
+  alertListAlertTypes String[] @default([])
+  alertListNWSOffices String[] @default([])
 
 }

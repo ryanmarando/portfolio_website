@@ -53,7 +53,7 @@ type UserData = {
   states: string;
   counties?: { [key: string]: string[] };
   alertTypes?: string[];
-  NWSoffices?: string;
+  NWSoffices?: string[];
 };
 
 let alertList: Alert[] = [];
@@ -124,52 +124,94 @@ const getAllActiveAlerts = async (userData: UserData): Promise<void> => {
 
 const appendAndFilterAllAlerts = async (
   userData: UserData,
-  alertData: any,
+  alertData: any[],
   state: string
 ) => {
-  if (alertData) {
-    const raw_alert_list = alertData;
-
-    alertList = alertList.concat(
-      raw_alert_list.map((feature: any) => {
-        const props = feature.properties;
-        return new Alert({
-          id: props.id,
-          areaDesc: props.areaDesc,
-          event: props.event,
-          effective: props.effective,
-          ends: props.ends,
-          expires: props.expires,
-          headline: props.headline,
-          description: props.description,
-          priority: getEventPriority(props.event),
-          color: getEventColor(props.event),
-          senderName: props.senderName,
-          stringOutput: formatStringOutput(
-            props.event,
-            props.ends,
-            props.expires
-          ),
-        });
-      })
+  // Filter by county first, remove ones not matching
+  if (userData.counties && userData.counties?.[state]?.length > 0) {
+    const userCounties = userData.counties[state].map((c) =>
+      c
+        .trim()
+        .toLowerCase()
+        .replace(/,\s*\w{2}$/, "")
     );
 
-    // Then filter only for counties in this state
-    if (userData.counties?.[state] && userData.counties?.[state].length > 0) {
-      alertList = await filterAlertsByCounty(userData, state);
-    }
+    for (let i = alertData.length - 1; i >= 0; i--) {
+      const feature = alertData[i];
+      const rawAreaDescs = feature.properties.areaDesc.split(";");
 
-    if (userData.alertTypes && userData.alertTypes.length > 0) {
-      // Proceed with split operation or other logic for alertTypes
-      const filteredAlertsByType = await filterAlertsByType(userData);
-      alertList = filteredAlertsByType;
-    }
+      const normalizedAreaDescs = rawAreaDescs.map((c: string) =>
+        c
+          .trim()
+          .toLowerCase()
+          .replace(/,\s*\w{2}$/, "")
+      );
 
-    if (userData.NWSoffices && userData.NWSoffices.length > 0) {
-      const filteredAlertsByOffice = await filterAlertsByOffice(userData);
-      alertList = filteredAlertsByOffice;
+      // Match normalized alert counties against normalized user counties
+      const matchingCounties = normalizedAreaDescs
+        .map((normalizedCounty: string, index: number) => {
+          if (userCounties.includes(normalizedCounty)) {
+            return rawAreaDescs[index].trim(); // Use original string for display
+          }
+          return null;
+        })
+        .filter((c: any) => c !== null) as string[];
+
+      if (matchingCounties.length === 0) {
+        alertData.splice(i, 1); // Remove alert if no counties match
+      } else {
+        // Update areaDesc to only the matching counties
+        feature.properties.areaDesc = matchingCounties.join("; ");
+      }
     }
   }
+
+  // Filter by alert type
+  if (userData.alertTypes && userData.alertTypes?.length > 0) {
+    const alertTypes = userData.alertTypes.map((t) => t.trim());
+    for (let i = alertData.length - 1; i >= 0; i--) {
+      const event = alertData[i].properties.event.trim();
+      if (!alertTypes.includes(event)) {
+        alertData.splice(i, 1);
+      }
+    }
+  }
+
+  // Filter by NWS office
+  if (userData.NWSoffices && userData.NWSoffices?.length > 0) {
+    const nwsOffices = userData.NWSoffices.map((o) => o.trim());
+    for (let i = alertData.length - 1; i >= 0; i--) {
+      const sender = alertData[i].properties.senderName.trim();
+      if (!nwsOffices.includes(sender)) {
+        alertData.splice(i, 1);
+      }
+    }
+  }
+
+  // Convert remaining alerts to Alert objects and append
+  alertList = alertList.concat(
+    alertData.map((feature: any) => {
+      const props = feature.properties;
+      return new Alert({
+        id: props.id,
+        areaDesc: props.areaDesc,
+        event: props.event,
+        effective: props.effective,
+        ends: props.ends,
+        expires: props.expires,
+        headline: props.headline,
+        description: props.description,
+        priority: getEventPriority(props.event),
+        color: getEventColor(props.event),
+        senderName: props.senderName,
+        stringOutput: formatStringOutput(
+          props.event,
+          props.ends,
+          props.expires
+        ),
+      });
+    })
+  );
 };
 
 const getEventPriority = (event: string): number => {
@@ -178,101 +220,6 @@ const getEventPriority = (event: string): number => {
 
 const getEventColor = (event: string): string => {
   return eventTypeColor[event];
-};
-
-const filterAlertsByCounty = async (
-  userData: UserData,
-  state: string
-): Promise<Alert[]> => {
-  if (!userData.counties || !userData.counties[state]) {
-    return []; // No counties provided for this state
-  }
-
-  const normalizeCounty = (county: string) =>
-    county
-      .trim()
-      .toLowerCase()
-      .replace(/,\s*\w{2}$/, ""); // Removes ", tn" or similar
-
-  const userStateCounties = userData.counties[state];
-  const userCountiesNormalized = userStateCounties.map((county) =>
-    normalizeCounty(county)
-  );
-
-  //console.log(
-  //  `Checking these counties for state ${state}:`,
-  //  userCountiesNormalized
-  //);
-
-  const filteredAlerts = alertList.filter((alert) => {
-    const alertAreaCounties = alert.areaDesc.split(";").map((c) => c.trim());
-
-    const alertAreaCountiesNormalized = alertAreaCounties.map((county) =>
-      normalizeCounty(county)
-    );
-
-    const matchingCounties = alertAreaCountiesNormalized.filter((county) =>
-      userCountiesNormalized.includes(county)
-    );
-
-    //console.log("Matched:", matchingCounties);
-
-    if (matchingCounties.length > 0) {
-      // Preserve the original full county names for display
-      const originalMatching = alertAreaCounties.filter((c) =>
-        userCountiesNormalized.includes(normalizeCounty(c))
-      );
-
-      alert.areaDesc = originalMatching.join("; ");
-      return true;
-    }
-
-    return false;
-  });
-
-  return filteredAlerts;
-};
-
-const filterAlertsByType = async (userData: UserData): Promise<Alert[]> => {
-  if (!userData.alertTypes) {
-    return alertList; // If no alert types are provided, return the full list
-  }
-
-  // Split the user's alertTypes and remove extra spaces
-  const userAlertTypes = userData.alertTypes.map((t) => t.trim());
-
-  //console.log("User alert types:", userAlertTypes);
-
-  // Filter alerts: must match exactly any of the user-specified types
-  const filteredAlerts = alertList.filter((alert) => {
-    const alertEvent = alert.event.trim(); // Remove extra spaces if necessary
-    return userAlertTypes.includes(alertEvent); // strict match only
-  });
-
-  return filteredAlerts;
-};
-
-const filterAlertsByOffice = async (userData: UserData): Promise<Alert[]> => {
-  if (!userData.NWSoffices) {
-    return []; // Return empty array if no NWS offices are provided
-  }
-
-  // Split the user's NWS offices and trim any extra spaces
-  const userOffices = userData.NWSoffices.split(",").map((office) =>
-    office.trim()
-  );
-
-  console.log("Checking these NWS offices:", userOffices);
-
-  // Filter alerts: must match exactly any of the user-specified NWS offices
-  const filteredAlerts = alertList.filter((alert) => {
-    const alertSender = alert.senderName.trim(); // Get senderName and trim extra spaces
-
-    // Check if any of the user's NWS offices match the senderName of the alert
-    return userOffices.includes(alertSender);
-  });
-
-  return filteredAlerts;
 };
 
 const formatStringOutput = (
