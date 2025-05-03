@@ -248,10 +248,12 @@ const formatStringOutput = (
 ): string => {
     if (ends) {
         const endFormatted = formatKitchenTime(ends);
-        return `${event} until ${endFormatted}`;
+        //return `${event} until ${endFormatted}`;
+        return `${event} until ${ends}`;
     } else {
         const expiresFormatted = formatKitchenTime(expires);
-        return `${event} expires ${expiresFormatted}`;
+        //return `${event} expires ${expiresFormatted}`;
+        return `${event} expires ${expires}`;
     }
 };
 
