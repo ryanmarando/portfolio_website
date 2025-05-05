@@ -28,7 +28,10 @@ model ModelTrend {
   validTime      DateTime // time the forecast is valid for
   parameter      String   // e.g., "2m_temp", "precip"
   value          Float    // parsed value for the parameter
+  location       String?  // optional: station ID, lat/lon, etc.
   createdAt      DateTime @default(now())
 
   @@index([modelName, runTime, forecastHour, parameter])
+  @@unique([modelName, runTime, validTime, parameter]) // Add this line for compound unique constraint
 }
+
