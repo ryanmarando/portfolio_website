@@ -21,17 +21,16 @@ model YoutubeUrls {
 }
 
 model ModelTrend {
-  id             String   @id @default(cuid())
-  modelName      String   // e.g., "GFS"
-  runTime        DateTime // model run time (e.g., 2025-05-03T00:00Z)
-  forecastHour   Int      // e.g., 24, 48
-  validTime      DateTime // time the forecast is valid for
-  parameter      String   // e.g., "2m_temp", "precip"
-  value          Float    // parsed value for the parameter
-  location       String?  // optional: station ID, lat/lon, etc.
-  createdAt      DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  modelName   String
+  location    String
+  runTime     DateTime
+  validTime   DateTime
+  forecastHour Int
+  parameter   String
+  value       Float
 
-  @@index([modelName, runTime, forecastHour, parameter])
-  @@unique([modelName, runTime, validTime, parameter]) // Add this line for compound unique constraint
+  @@unique([modelName, location, runTime, validTime, parameter])
 }
+
 
