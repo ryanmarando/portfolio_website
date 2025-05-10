@@ -4,8 +4,8 @@
   "main": "dist/app.js",
   "scripts": {
     "build": "npx prisma generate && tsc",
-    "dev": "tsc && node dist/app.js",
-    "start": "node dist/app.js",
+    "dev": "tsc && node dist/src/app.js",
+    "start": "node dist/src/app.js",
     "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\"",
     "postinstall": "tsc && prisma migrate deploy && prisma db seed"
   },
