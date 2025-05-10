@@ -1,6 +1,7 @@
 import { RequestHandler } from "express";
 import axios from "axios";
 import { prisma } from "../config.js";
+import { ModelTrend } from "@prisma/client";
 
 const sampleData = `
 KDAN    NBM V4.2 NBS GUIDANCE    5/06/2025  0800 UTC
@@ -133,6 +134,39 @@ KDAN    NBM V4.2 NBS GUIDANCE    5/06/2025  0800 UTC
  SOL   3 16 45 56 11  0  0  0 16 67 86 56 15  1  1  0  4 20 34 35 32  1  1
 `;
 
+const modelData = [
+  {
+    id: 1,
+    modelName: "NBM",
+    location: "KDAY",
+    runTime: new Date("2025-05-10T00:00:00.000Z"),
+    validTime: new Date("2025-05-10T06:00:00.000Z"),
+    forecastHour: 6,
+    parameter: "TMP",
+    value: 48,
+  },
+  {
+    id: 2,
+    modelName: "NBM",
+    location: "KDAY",
+    runTime: new Date("2025-05-10T01:00:00.000Z"),
+    validTime: new Date("2025-05-10T06:00:00.000Z"),
+    forecastHour: 5,
+    parameter: "TMP",
+    value: 51,
+  },
+  {
+    id: 3,
+    modelName: "NBM",
+    location: "KDAY",
+    runTime: new Date("2025-05-10T02:00:00.000Z"),
+    validTime: new Date("2025-05-10T06:00:00.000Z"),
+    forecastHour: 4,
+    parameter: "TMP",
+    value: 30,
+  },
+];
+
 const parameterTypes = [
   "TMP",
   "DPT",
@@ -196,8 +230,11 @@ export const getModelData: RequestHandler = async (req, res) => {
   const date =
     (req.query.date as string) ||
     new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const hour = (req.query.hour as string) || "00";
+  const now = new Date();
+  const currentHour = now.getUTCHours().toString().padStart(2, "0");
+  const hour = (req.query.hour as string) || String(Number(currentHour) - 1);
   const url = `https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.${date}/${hour}/text/blend_nbstx.t${hour}z`;
+  console.log("Latest Run: ", hour, " at ", url);
 
   try {
     const response: any = await axios.get(url, { responseType: "text" });
@@ -222,7 +259,7 @@ export const getModelData: RequestHandler = async (req, res) => {
       if (kCallLetterMatch) {
         location = kCallLetterMatch ? kCallLetterMatch[0].trim() : "Unknown";
         runTimeStamp = getRunTimeStamp(line);
-        console.log(location);
+        //console.log(location);
       }
 
       // Capture forecast hours
@@ -268,7 +305,14 @@ export const getModelData: RequestHandler = async (req, res) => {
           //console.log(parameter, ":", value, " at ", fh);
 
           // Get time stamp to enter data point
-          const validTime = timestampFromNBMLine(runDate, hour, fh);
+          let validTime;
+          try {
+            validTime = timestampFromNBMLine(runDate, hour, fh);
+          } catch (err) {
+            console.error("Invalid timestampFromNBMLine:", err);
+            continue;
+          }
+
           //console.log(validTime);
           if (isNaN(validTime.getTime())) {
             console.error(
@@ -298,6 +342,7 @@ export const getModelData: RequestHandler = async (req, res) => {
         }
       }
     }
+    console.log("Completed reading in data...");
 
     // Save all the records to the database
     const BATCH_SIZE = 1000;
@@ -306,7 +351,23 @@ export const getModelData: RequestHandler = async (req, res) => {
     const filteredRecords = records.filter(
       (record) => record.location?.startsWith("K") && record.runTime
     );
+    console.log("Completed filtering from K locations only...");
 
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    try {
+      const deleted = await prisma.modelTrend.deleteMany({
+        where: {
+          runTime: {
+            lt: cutoffTime,
+          },
+        },
+      });
+      console.log(`Deleted ${deleted.count} old records (older than 24h)`);
+    } catch (err) {
+      console.error("Error deleting old records:", err);
+    }
+
+    console.log("Saving to database...");
     // Process in batches
     for (let i = 0; i < filteredRecords.length; i += BATCH_SIZE) {
       const batch = filteredRecords.slice(i, i + BATCH_SIZE);
@@ -318,110 +379,11 @@ export const getModelData: RequestHandler = async (req, res) => {
         });
 
         saved += result.count;
-        console.log(saved, "/", filteredRecords.length, "saved");
+        //console.log(saved, "/", filteredRecords.length, "saved");
       } catch (err) {
         console.error("Error in batch insert:", err);
       }
     }
-
-    // let runDate =
-    //   date.slice(0, 4) + "-" + date.slice(4, 6) + "-" + date.slice(6);
-    // let forecastHours: number[] = [];
-    // const records: any[] = [];
-
-    // for (let i = 0; i < lines.length; i++) {
-    //   const line = lines[i];
-    //   if (!line.trim()) continue;
-
-    //   // Extract K call letters (e.g., "KATL") from the parameter line
-    //   const kCallLetterMatch = line.match(/\s*K[A-Z]{3}\s*/);
-    //   const kCallLetter = kCallLetterMatch
-    //     ? kCallLetterMatch[0].trim()
-    //     : "Unknown";
-
-    //   if (kCallLetter !== "Unknown") {
-    //     console.log(kCallLetterMatch, kCallLetter);
-    //   }
-
-    //   // Capture forecast hours
-    //   if (line.includes("FHR")) {
-    //     const parts = line.match(/\d+/g);
-    //     if (parts) {
-    //       forecastHours = parts.map((h: string) => parseInt(h));
-    //     } else {
-    //       console.warn("No forecast hours found in FHR line:", line);
-    //     }
-    //     continue;
-    //   }
-
-    //   // Capture parameter rows (e.g., TMP, DPT, SKY)
-    //   if (line.match(/^\s*[A-Z]{3}/)) {
-    //     const parts = line.trim().split(/\s+/);
-    //     const param = parts[0];
-    //     const values = parts.slice(1).map((v: any) => parseFloat(v));
-
-    //     for (let j = 0; j < values.length; j++) {
-    //       const value = values[j];
-    //       if (isNaN(value)) continue;
-
-    //       const fh = forecastHours[j];
-    //       if (isNaN(fh)) {
-    //         console.warn(
-    //           `Skipping invalid forecast hour at index ${j}:`,
-    //           forecastHours[j]
-    //         );
-    //         continue;
-    //       }
-
-    //       const validTime = timestampFromNBMLine(runDate, hour, fh);
-    //       if (isNaN(validTime.getTime())) {
-    //         console.error(
-    //           `Invalid validTime for runDate=${runDate}, runHour=${hour}, fHour=${fh}`
-    //         );
-    //         continue;
-    //       }
-
-    //       //console.log("Valid time:", validTime);
-
-    //       if (kCallLetter !== "Unknown") {
-    //         records.push({
-    //           modelName: "NBM",
-    //           location: kCallLetter,
-    //           runTime: validTime,
-    //           validTime,
-    //           forecastHour: fh,
-    //           parameter: param,
-    //           value,
-    //         });
-    //       }
-    //     }
-    //   }
-    // }
-
-    // if (records.length === 0) {
-    //   console.log("No records found after parsing NBM data.");
-    // }
-
-    // let saved = 0;
-    // for (const record of records) {
-    //   try {
-    //     await prisma.modelTrend.upsert({
-    //       where: {
-    //         modelName_runTime_validTime_parameter: {
-    //           modelName: record.modelName,
-    //           runTime: record.runTime,
-    //           validTime: record.validTime,
-    //           parameter: record.parameter,
-    //         },
-    //       },
-    //       update: { value: record.value },
-    //       create: record,
-    //     });
-    //     saved++;
-    //   } catch (err) {
-    //     console.error("Error inserting record into database:", err);
-    //   }
-    // }
 
     console.log(`Saved ${saved} records to the database.`);
     res
@@ -468,5 +430,134 @@ export const deleteAllModelData: RequestHandler = async (req, res) => {
   } catch (error: any) {
     console.error("Error deleting model data:", error);
     res.status(500).json({ error: "Failed to delete model data" });
+  }
+};
+
+type TrendResult = ModelTrend & {
+  trend: "rising" | "falling" | "steady";
+  delta: number;
+  original: number;
+};
+
+function attachTrendsToForecasts(data: ModelTrend[]): TrendResult[] {
+  const result: TrendResult[] = [];
+
+  // Group by location, parameter, and validTime
+  const groups = new Map<string, ModelTrend[]>();
+
+  for (const record of data) {
+    const key = `${record.location}-${
+      record.parameter
+    }-${record.validTime.toISOString()}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(record);
+  }
+
+  for (const [key, records] of groups.entries()) {
+    // Create a map of runTime -> record for faster lookup
+    const runMap = new Map<number, ModelTrend>();
+    for (const rec of records) {
+      runMap.set(rec.runTime.getTime(), rec);
+    }
+
+    // Sort runTimes so we can walk in order
+    const sortedRunTimes = Array.from(runMap.keys()).sort((a, b) => a - b);
+
+    for (let i = 1; i < sortedRunTimes.length; i++) {
+      const prevTime = sortedRunTimes[i - 1];
+      const currentTime = sortedRunTimes[i];
+
+      const previous = runMap.get(prevTime)!;
+      const current = runMap.get(currentTime)!;
+
+      const delta = current.value - previous.value;
+      let trend: "rising" | "falling" | "steady" = "steady";
+      if (delta > 0) trend = "rising";
+      else if (delta < 0) trend = "falling";
+
+      result.push({
+        ...current,
+        trend,
+        delta,
+        original: previous.value,
+      });
+    }
+  }
+
+  return result;
+}
+
+export const getModelComparison: RequestHandler = async (req, res) => {
+  const location = req.query.location as string | undefined;
+  const parameter = req.query.parameter as string | undefined;
+
+  if (!location) {
+    res.status(400).json({ error: "Missing location or parameter in query" });
+    return;
+  }
+
+  try {
+    const rawData = await prisma.modelTrend.findMany({
+      where: {
+        location,
+      },
+      orderBy: [
+        {
+          runTime: "desc",
+        },
+        {
+          validTime: "asc",
+        },
+      ],
+    });
+
+    // const rawDataTest = modelData
+
+    if (!rawData || rawData.length === 0) {
+      res.status(404).json({ message: "No model data found." });
+      return;
+    }
+
+    const withTrends = attachTrendsToForecasts(rawData);
+
+    res.status(200).json(withTrends);
+  } catch (error: any) {
+    console.error("Error computing model trends:", error);
+    res.status(500).json({ error: "Failed to retrieve model trend data" });
+  }
+};
+
+export const getLatestRunTime: RequestHandler = async (req, res) => {
+  const location = req.query.location as string | undefined;
+
+  if (!location) {
+    res.status(400).json({ error: "Missing location in query" });
+    return;
+  }
+
+  try {
+    const latestEntry = await prisma.modelTrend.findFirst({
+      where: { location },
+      orderBy: {
+        runTime: "desc",
+      },
+      select: {
+        runTime: true,
+      },
+    });
+
+    if (!latestEntry) {
+      res
+        .status(404)
+        .json({ message: "No model data found for that location." });
+      return;
+    }
+
+    res.status(200).json({ latestRunTime: latestEntry.runTime });
+  } catch (error: any) {
+    console.error("Error retrieving latest runTime:", error);
+    res.status(500).json({ error: "Failed to retrieve latest runTime" });
   }
 };

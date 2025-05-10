@@ -1,3 +1,5 @@
+export const API_URL = "https://portfolio-website-ct1a.onrender.com";
+
 export const eventTypePriority: Record<string, number> = {
   "Tsunami Warning": 1,
   "Tornado Warning": 2,

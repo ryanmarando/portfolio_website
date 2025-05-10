@@ -7,7 +7,7 @@ import wbgtRouter from "./routes/wbgt.js";
 import modelTrender from "./routes/modelTrender.js";
 
 const app = express();
-const port = 10000;
+const port = 3001;
 
 const corsOptions = {
   origin: [
