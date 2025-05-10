@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "npx generate && tsc",
+    "build": "npx prisma generate && tsc",
     "dev": "tsc && node dist/app.js",
     "start": "node dist/app.js",
     "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\"",
