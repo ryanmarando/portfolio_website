@@ -1,37 +1,37 @@
 {
-    "name": "api",
-    "version": "1.0.0",
-    "main": "index.js",
-    "scripts": {
-        "build": "tsc && npm install",
-        "dev": "tsc && node dist/app.js",
-        "start": "node dist/app.js",
-        "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\"",
-        "postinstall": "tsc && prisma migrate deploy && prisma db seed"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "description": "",
-    "type": "module",
-    "dependencies": {
-        "@prisma/client": "^6.7.0",
-        "axios": "^1.9.0",
-        "cheerio": "^1.0.0",
-        "cors": "^2.8.5",
-        "dotenv": "^16.5.0",
-        "express": "^5.1.0"
-    },
-    "devDependencies": {
-        "@types/axios": "^0.9.36",
-        "@types/better-sqlite3": "^7.6.13",
-        "@types/cheerio": "^0.22.35",
-        "@types/cors": "^2.8.17",
-        "@types/express": "^5.0.1",
-        "@types/node": "^22.15.3",
-        "nodemon": "^3.1.10",
-        "prisma": "^6.7.0",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.8.3"
-    }
+  "name": "api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "npx generate && tsc",
+    "dev": "tsc && node dist/app.js",
+    "start": "node dist/app.js",
+    "startapi": "nodemon --ext ts,js,json --exec \"node --no-warnings --loader ts-node/esm src/app.ts\"",
+    "postinstall": "tsc && prisma migrate deploy && prisma db seed"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module",
+  "dependencies": {
+    "@prisma/client": "^6.7.0",
+    "axios": "^1.9.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/axios": "^0.9.36",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cheerio": "^0.22.35",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.15.3",
+    "nodemon": "^3.1.10",
+    "prisma": "^6.7.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
 }
