@@ -180,7 +180,6 @@ const parameterTypes = [
   "T03",
   "T06",
   "T12",
-  "VIS",
 ];
 
 const getRunTimeStamp = (line: string) => {
@@ -238,7 +237,7 @@ export const getModelData: RequestHandler = async (req, res) => {
 
   try {
     const response: any = await axios.get(url, { responseType: "text" });
-    const lines = response.data.split("\n");
+    const lines = response.data.split("\n"); //.slice(0, 50);
     //const lines = sampleData.split("\n");
 
     let runDate =
@@ -274,70 +273,118 @@ export const getModelData: RequestHandler = async (req, res) => {
         continue;
       }
 
-      // Capture parameter rows
-      if (line.match(/^\s*[A-Z]{3}/)) {
-        //if (line.includes("TMP")) {
+      if (line.match(/^\s*[A-Z0-9]{3}/)) {
         const parts = line.trim().split(/\s+/);
         parameter = parts[0];
         if (!parameterTypes.includes(parameter)) continue;
-        const values = parts.slice(1).map((v: any) => parseFloat(v));
+        const values = parts.slice(1);
+        //console.log(parameter, forecastHours, values);
 
-        // Loop through parameters by time
-        for (let j = 0; j < values.length; j++) {
-          const value = values[j];
-          //console.log(values[j], ":", forecastHours[j]);
-          //console.log(
-          //  "Value:",
-          //  isNaN(value),
-          //  "Forecast:",
-          //  isNaN(forecastHours[j])
-          //);
-          if (isNaN(value)) continue;
+        if (["P06", "Q06", "T06"].includes(parameter)) {
+          // These parameters provide values every 6 hours, but forecastHours is in 3-hour increments.
+          // So value[0] matches forecastHour[2], value[1] matches forecastHour[4], etc.
+          for (let i = 0; i < values.length; i++) {
+            const valueStr = values[i];
+            const fhIndex = i * 2;
+            const forecastHour = forecastHours[fhIndex];
+            if (!forecastHour) break; // Safety check
 
-          const fh = forecastHours[j];
-          if (isNaN(fh)) {
-            // console.warn(
-            //   `Skipping invalid forecast hour at index ${j}:`,
-            //   forecastHours[j]
-            // );
-            continue;
+            if (!valueStr) continue;
+
+            const value = parseFloat(valueStr);
+            if (isNaN(value)) continue;
+
+            let validTime;
+            try {
+              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
+            } catch (err) {
+              console.error("timestamp error:", err);
+              continue;
+            }
+
+            if (isNaN(validTime.getTime())) continue;
+
+            if (location[0] === "K" && runTimeStamp) {
+              records.push({
+                modelName: "NBM",
+                location,
+                runTime: runTimeStamp,
+                validTime,
+                forecastHour,
+                parameter,
+                value,
+              });
+            }
           }
-          //console.log(parameter, ":", value, " at ", fh);
+        } else if (["P12", "Q12", "T12"].includes(parameter)) {
+          for (let i = 0; i < values.length; i++) {
+            const valueStr = values[i];
+            const fhIndex = i * 4;
+            const forecastHour = forecastHours[fhIndex];
+            if (!forecastHour) break; // Safety check
 
-          // Get time stamp to enter data point
-          let validTime;
-          try {
-            validTime = timestampFromNBMLine(runDate, hour, fh);
-          } catch (err) {
-            console.error("Invalid timestampFromNBMLine:", err);
-            continue;
+            if (!valueStr) continue;
+
+            const value = parseFloat(valueStr);
+            if (isNaN(value)) continue;
+
+            let validTime;
+            try {
+              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
+            } catch (err) {
+              console.error("timestamp error:", err);
+              continue;
+            }
+
+            if (isNaN(validTime.getTime())) continue;
+
+            if (location[0] === "K" && runTimeStamp) {
+              records.push({
+                modelName: "NBM",
+                location,
+                runTime: runTimeStamp,
+                validTime,
+                forecastHour,
+                parameter,
+                value,
+              });
+            }
           }
+        } else {
+          for (let i = 0; i < forecastHours.length; i++) {
+            const forecastHour = forecastHours[i];
+            let valueStr = values[i];
 
-          //console.log(validTime);
-          if (isNaN(validTime.getTime())) {
-            console.error(
-              `Invalid validTime for runDate=${runDate}, runHour=${hour}, fHour=${fh}`
-            );
-            continue;
-          }
+            // If valueStr is empty, skip this forecast hour
+            if (!valueStr) continue;
 
-          //console.log(timestampFromNBMLine(date, hour, 0));
-          // Create record to store in the database at the end
-          if (
-            location[0] === "K" &&
-            runTimeStamp &&
-            parameterTypes.includes(parameter)
-          ) {
-            //console.log(location[0]);
-            records.push({
-              modelName: "NBM",
-              location: location,
-              runTime: runTimeStamp,
-              validTime,
-              forecastHour: fh,
-              parameter: parameter,
-              value,
-            });
+            // Parse the value and ensure it's valid
+            const value = parseFloat(valueStr);
+            if (isNaN(value)) continue;
+
+            let validTime;
+            try {
+              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
+            } catch (err) {
+              console.error("timestamp error:", err);
+              continue;
+            }
+
+            if (isNaN(validTime.getTime())) {
+              continue;
+            }
+
+            if (location[0] === "K" && runTimeStamp) {
+              records.push({
+                modelName: "NBM",
+                location,
+                runTime: runTimeStamp,
+                validTime,
+                forecastHour: forecastHour,
+                parameter,
+                value,
+              });
+            }
           }
         }
       }
@@ -456,13 +503,13 @@ function attachTrendsToForecasts(data: ModelTrend[]): TrendResult[] {
   }
 
   for (const [key, records] of groups.entries()) {
-    // Create a map of runTime -> record for faster lookup
+    if (records.length < 2) continue; // Skip if only one runTime present
+
     const runMap = new Map<number, ModelTrend>();
     for (const rec of records) {
       runMap.set(rec.runTime.getTime(), rec);
     }
 
-    // Sort runTimes so we can walk in order
     const sortedRunTimes = Array.from(runMap.keys()).sort((a, b) => a - b);
 
     for (let i = 1; i < sortedRunTimes.length; i++) {
@@ -491,7 +538,6 @@ function attachTrendsToForecasts(data: ModelTrend[]): TrendResult[] {
 
 export const getModelComparison: RequestHandler = async (req, res) => {
   const location = req.query.location as string | undefined;
-  const parameter = req.query.parameter as string | undefined;
 
   if (!location) {
     res.status(400).json({ error: "Missing location or parameter in query" });
@@ -512,8 +558,6 @@ export const getModelComparison: RequestHandler = async (req, res) => {
         },
       ],
     });
-
-    // const rawDataTest = modelData
 
     if (!rawData || rawData.length === 0) {
       res.status(404).json({ message: "No model data found." });
