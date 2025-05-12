@@ -64,7 +64,10 @@ const run = async () => {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const now = new Date();
   const currentHour = now.getUTCHours().toString().padStart(2, "0");
-  const hour = String(Number(currentHour) - 1);
+  let hour = String(Number(currentHour) - 1);
+  if (Number(hour) < 10) {
+    hour = String("0" + hour);
+  }
   const url = `https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.${date}/${hour}/text/blend_nbstx.t${hour}z`;
   console.log("Latest Run: ", hour, " at ", url);
 

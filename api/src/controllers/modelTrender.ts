@@ -231,7 +231,10 @@ export const getModelData: RequestHandler = async (req, res) => {
     new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const now = new Date();
   const currentHour = now.getUTCHours().toString().padStart(2, "0");
-  const hour = (req.query.hour as string) || String(Number(currentHour) - 1);
+  let hour = (req.query.hour as string) || String(Number(currentHour) - 1);
+  if (Number(hour) < 10) {
+    hour = String("0" + hour);
+  }
   const url = `https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.${date}/${hour}/text/blend_nbstx.t${hour}z`;
   console.log("Latest Run: ", hour, " at ", url);
 
@@ -438,6 +441,7 @@ export const getModelData: RequestHandler = async (req, res) => {
       .json({ message: `Saved ${saved} records to the database.` });
   } catch (err: any) {
     console.error("Failed to fetch or process NBM data:", err.message);
+
     res.status(500).json({ error: "Failed to process NBM data" });
   }
 };
