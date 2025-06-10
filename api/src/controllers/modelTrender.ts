@@ -2,6 +2,8 @@ import { RequestHandler } from "express";
 import axios from "axios";
 import { prisma } from "../config.js";
 import { ModelTrend } from "@prisma/client";
+import * as readline from "readline";
+import { Readable } from "stream";
 
 const sampleData = `
 KDAN    NBM V4.2 NBS GUIDANCE    5/06/2025  0800 UTC
@@ -226,6 +228,16 @@ const timestampFromNBMLine = (
 };
 
 export const getModelData: RequestHandler = async (req, res) => {
+  const formatMemory = (bytes: number): string =>
+    `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+
+  console.log("Memory usage before processing:", {
+    rss: formatMemory(process.memoryUsage().rss),
+    heapTotal: formatMemory(process.memoryUsage().heapTotal),
+    heapUsed: formatMemory(process.memoryUsage().heapUsed),
+    external: formatMemory(process.memoryUsage().external),
+  });
+
   const date =
     (req.query.date as string) ||
     new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -233,206 +245,135 @@ export const getModelData: RequestHandler = async (req, res) => {
   const currentHour = now.getUTCHours().toString().padStart(2, "0");
   let hour = (req.query.hour as string) || String(Number(currentHour) - 1);
   if (Number(hour) < 10) {
-    hour = String("0" + hour);
+    hour = "0" + hour;
   }
   const url = `https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.${date}/${hour}/text/blend_nbstx.t${hour}z`;
   console.log("Latest Run: ", hour, " at ", url);
 
+  const runDate = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6)}`;
+
+  let forecastHours: number[] = [];
+  let location = "";
+  let runTimeStamp = null;
+  let saved = 0;
+
   try {
-    const response: any = await axios.get(url, { responseType: "text" });
-    const lines = response.data.split("\n"); //.slice(0, 50);
-    //const lines = sampleData.split("\n");
+    const response = await axios.get(url, { responseType: "stream" });
+    const rl = readline.createInterface({
+      input: response.data as Readable,
+      crlfDelay: Infinity,
+    });
 
-    let runDate =
-      date.slice(0, 4) + "-" + date.slice(4, 6) + "-" + date.slice(6);
-    let forecastHours: number[] = [];
-    const records: any[] = [];
-    let location = "";
-    let parameter = "";
-    let runTimeStamp = null;
-    let saved = 0;
+    const BATCH_SIZE = 1000;
+    let batch: any[] = [];
 
-    for (const line of lines) {
-      // Skip if line is empty
-      if (!line.trim()) continue;
+    for await (const line of rl) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
 
-      // Extract K call letters
-      const kCallLetterMatch = line.match(/\s*K[A-Z]{3}\s*/);
+      const kCallLetterMatch = trimmed.match(/\s*K[A-Z]{3}\s*/);
       if (kCallLetterMatch) {
-        location = kCallLetterMatch ? kCallLetterMatch[0].trim() : "Unknown";
-        runTimeStamp = getRunTimeStamp(line);
-        //console.log(location);
+        location = kCallLetterMatch[0].trim();
+        runTimeStamp = getRunTimeStamp(trimmed);
+        continue;
       }
 
-      // Capture forecast hours
-      if (line.includes("FHR")) {
-        const parts = line.match(/\d+/g);
+      if (trimmed.includes("FHR")) {
+        const parts = trimmed.match(/\d+/g);
         if (parts) {
-          forecastHours = parts.map((h: string) => parseInt(h));
-          //console.log(forecastHours);
+          forecastHours = parts.map(Number);
         } else {
-          console.warn("No forecast hours found in FHR line:", line);
+          console.warn("No forecast hours found in FHR line:", trimmed);
         }
         continue;
       }
 
-      if (line.match(/^\s*[A-Z0-9]{3}/)) {
-        const parts = line.trim().split(/\s+/);
-        parameter = parts[0];
+      if (/^\s*[A-Z0-9]{3}/.test(trimmed)) {
+        const parts = trimmed.split(/\s+/);
+        const parameter = parts[0];
         if (!parameterTypes.includes(parameter)) continue;
+
         const values = parts.slice(1);
-        //console.log(parameter, forecastHours, values);
 
-        if (["P06", "Q06", "T06"].includes(parameter)) {
-          // These parameters provide values every 6 hours, but forecastHours is in 3-hour increments.
-          // So value[0] matches forecastHour[2], value[1] matches forecastHour[4], etc.
-          for (let i = 0; i < values.length; i++) {
-            const valueStr = values[i];
-            const fhIndex = i * 2;
-            const forecastHour = forecastHours[fhIndex];
-            if (!forecastHour) break; // Safety check
+        const getValidForecastHour = (i: number): number | undefined => {
+          if (["P06", "Q06", "T06"].includes(parameter))
+            return forecastHours[i * 2];
+          if (["P12", "Q12", "T12"].includes(parameter))
+            return forecastHours[i * 4];
+          return forecastHours[i];
+        };
 
-            if (!valueStr) continue;
+        for (let i = 0; i < values.length; i++) {
+          const valueStr = values[i];
+          if (!valueStr) continue;
 
-            const value = parseFloat(valueStr);
-            if (isNaN(value)) continue;
+          const value = parseFloat(valueStr);
+          if (isNaN(value)) continue;
 
-            let validTime;
-            try {
-              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
-            } catch (err) {
-              console.error("timestamp error:", err);
-              continue;
-            }
+          const forecastHour = getValidForecastHour(i);
+          if (forecastHour === undefined) continue;
 
-            if (isNaN(validTime.getTime())) continue;
-
-            if (location[0] === "K" && runTimeStamp) {
-              records.push({
-                modelName: "NBM",
-                location,
-                runTime: runTimeStamp,
-                validTime,
-                forecastHour,
-                parameter,
-                value,
-              });
-            }
+          let validTime: Date;
+          try {
+            validTime = timestampFromNBMLine(runDate, hour, forecastHour);
+          } catch (err) {
+            console.error("timestamp error:", err);
+            continue;
           }
-        } else if (["P12", "Q12", "T12"].includes(parameter)) {
-          for (let i = 0; i < values.length; i++) {
-            const valueStr = values[i];
-            const fhIndex = i * 4;
-            const forecastHour = forecastHours[fhIndex];
-            if (!forecastHour) break; // Safety check
 
-            if (!valueStr) continue;
+          if (isNaN(validTime.getTime())) continue;
 
-            const value = parseFloat(valueStr);
-            if (isNaN(value)) continue;
+          if (location.startsWith("K") && runTimeStamp) {
+            batch.push({
+              modelName: "NBM",
+              location,
+              runTime: runTimeStamp,
+              validTime,
+              forecastHour,
+              parameter,
+              value,
+            });
 
-            let validTime;
-            try {
-              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
-            } catch (err) {
-              console.error("timestamp error:", err);
-              continue;
-            }
-
-            if (isNaN(validTime.getTime())) continue;
-
-            if (location[0] === "K" && runTimeStamp) {
-              records.push({
-                modelName: "NBM",
-                location,
-                runTime: runTimeStamp,
-                validTime,
-                forecastHour,
-                parameter,
-                value,
-              });
-            }
-          }
-        } else {
-          for (let i = 0; i < forecastHours.length; i++) {
-            const forecastHour = forecastHours[i];
-            let valueStr = values[i];
-
-            // If valueStr is empty, skip this forecast hour
-            if (!valueStr) continue;
-
-            // Parse the value and ensure it's valid
-            const value = parseFloat(valueStr);
-            if (isNaN(value)) continue;
-
-            let validTime;
-            try {
-              validTime = timestampFromNBMLine(runDate, hour, forecastHour);
-            } catch (err) {
-              console.error("timestamp error:", err);
-              continue;
-            }
-
-            if (isNaN(validTime.getTime())) {
-              continue;
-            }
-
-            if (location[0] === "K" && runTimeStamp) {
-              records.push({
-                modelName: "NBM",
-                location,
-                runTime: runTimeStamp,
-                validTime,
-                forecastHour: forecastHour,
-                parameter,
-                value,
-              });
+            if (batch.length >= BATCH_SIZE) {
+              try {
+                const result = await prisma.modelTrend.createMany({
+                  data: batch,
+                  skipDuplicates: true,
+                });
+                saved += result.count;
+                batch = [];
+              } catch (err) {
+                console.error("Error in batch insert:", err);
+              }
             }
           }
         }
       }
     }
-    console.log("Completed reading in data...");
 
-    // Save all the records to the database
-    const BATCH_SIZE = 1000;
+    // Insert any remaining records
+    if (batch.length > 0) {
+      try {
+        const result = await prisma.modelTrend.createMany({
+          data: batch,
+          skipDuplicates: true,
+        });
+        saved += result.count;
+      } catch (err) {
+        console.error("Error in final batch insert:", err);
+      }
+    }
 
-    // Filter only valid records first
-    const filteredRecords = records.filter(
-      (record) => record.location?.startsWith("K") && record.runTime
-    );
-    console.log("Completed filtering from K locations only...");
-
-    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000);
     try {
       const deleted = await prisma.modelTrend.deleteMany({
         where: {
-          runTime: {
-            lt: cutoffTime,
-          },
+          runTime: { lt: cutoffTime },
         },
       });
       console.log(`Deleted ${deleted.count} old records (older than 24h)`);
     } catch (err) {
       console.error("Error deleting old records:", err);
-    }
-
-    console.log("Saving to database...");
-    // Process in batches
-    for (let i = 0; i < filteredRecords.length; i += BATCH_SIZE) {
-      const batch = filteredRecords.slice(i, i + BATCH_SIZE);
-
-      try {
-        const result = await prisma.modelTrend.createMany({
-          data: batch,
-          skipDuplicates: true, // Skip if a unique record already exists
-        });
-
-        saved += result.count;
-        //console.log(saved, "/", filteredRecords.length, "saved");
-      } catch (err) {
-        console.error("Error in batch insert:", err);
-      }
     }
 
     console.log(`Saved ${saved} records to the database.`);
@@ -441,11 +382,16 @@ export const getModelData: RequestHandler = async (req, res) => {
       .json({ message: `Saved ${saved} records to the database.` });
   } catch (err: any) {
     console.error("Failed to fetch or process NBM data:", err.message);
-
     res.status(500).json({ error: "Failed to process NBM data" });
   }
-};
 
+  console.log("Memory usage after processing:", {
+    rss: formatMemory(process.memoryUsage().rss),
+    heapTotal: formatMemory(process.memoryUsage().heapTotal),
+    heapUsed: formatMemory(process.memoryUsage().heapUsed),
+    external: formatMemory(process.memoryUsage().external),
+  });
+};
 export const getSavedModelData: RequestHandler = async (req, res) => {
   const location = req.query.location as string | undefined;
   const parameter = req.query.parameter as string | undefined;
