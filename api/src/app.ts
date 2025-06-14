@@ -13,7 +13,7 @@ const corsOptions = {
     origin: [
         "http://localhost:3000",
         "https://nws-api-active-alerts-test.vercel.app",
-        "https://www.ryanmarando.com/",
+        "https://www.ryanmarando.com",
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
