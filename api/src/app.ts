@@ -10,13 +10,14 @@ const app = express();
 const port = 10000; // 3001 or 10000
 
 const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "https://nws-api-active-alerts-test.vercel.app",
-  ],
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
+    origin: [
+        "http://localhost:3000",
+        "https://nws-api-active-alerts-test.vercel.app",
+        "https://www.ryanmarando.com/",
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
 };
 
 app.use(express.json());
@@ -24,7 +25,7 @@ app.use(cors(corsOptions));
 app.use(logging.logRequest);
 
 app.get("/", (req, res) => {
-  res.send("Welcome To Ryan Marando's Portfolio");
+    res.send("Welcome To Ryan Marando's Portfolio");
 });
 
 app.use("/youtubeURLs", youtubeURLsRouter);
@@ -33,5 +34,5 @@ app.use("/wbgt", wbgtRouter);
 app.use("/modelTrender", modelTrender);
 
 app.listen(port, "0.0.0.0", () => {
-  console.log(`API listening on :${port}`);
+    console.log(`API listening on :${port}`);
 });
